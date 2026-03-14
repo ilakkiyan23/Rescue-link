@@ -101,6 +101,19 @@ Each device acts as a relay node, forwarding SOS signals through nearby devices.
 
 ---
 
+## 🧭 System Flow Diagrams
+
+### 🚨 Disaster Alert System Flow
+![Disaster Alert System Flow](image3)
+
+### 🆘 SOS Emergency Flow
+![SOS Emergency Flow](image2)
+
+### 📶 Bluetooth Mesh Message Propagation Flow
+![Bluetooth Mesh Message Propagation Flow](image1)
+
+---
+
 ## 🛠 Technologies Used
 
 - Flutter
