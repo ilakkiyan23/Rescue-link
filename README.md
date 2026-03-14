@@ -104,13 +104,13 @@ Each device acts as a relay node, forwarding SOS signals through nearby devices.
 ## 🧭 System Flow Diagrams
 
 ### 🚨 Disaster Alert System Flow
-![Disaster Alert System Flow](image3)
+![Disaster Alert System Flow](docs/images/disaster-alert-flow.jpg)
 
 ### 🆘 SOS Emergency Flow
-![SOS Emergency Flow](image2)
+![SOS Emergency Flow](docs/images/sos-emergency-flow.jpg)
 
 ### 📶 Bluetooth Mesh Message Propagation Flow
-![Bluetooth Mesh Message Propagation Flow](image1)
+![Bluetooth Mesh Message Propagation Flow](docs/images/bluetooth-mesh-flow.jpg)
 
 ---
 
