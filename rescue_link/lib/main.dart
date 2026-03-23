@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:rescue_link/services/location_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const RescueLinkApp());
@@ -139,6 +143,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   bool _isActive = false;
+  bool _locationLoading = true;
+  String _locationLabel = 'Fetching location...';
   late final AnimationController _pulseController;
 
   @override
@@ -150,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen>
       lowerBound: 1.0,
       upperBound: 1.05,
     );
+    _refreshLocation();
   }
 
   @override
@@ -162,11 +169,38 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _isActive = !_isActive);
     if (_isActive) {
       _pulseController.repeat(reverse: true);
+      _refreshLocation();
       widget.onShowGlobalOverlay();
     } else {
       _pulseController.stop();
       _pulseController.value = 1.0;
     }
+  }
+
+  Future<void> _refreshLocation() async {
+    setState(() {
+      _locationLoading = true;
+      _locationLabel = 'Fetching location...';
+    });
+
+    final Position? position = await LocationService.getCurrentPosition();
+    if (!mounted) {
+      return;
+    }
+
+    if (position == null) {
+      setState(() {
+        _locationLoading = false;
+        _locationLabel = 'Location unavailable';
+      });
+      return;
+    }
+
+    setState(() {
+      _locationLoading = false;
+      _locationLabel =
+          '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+    });
   }
 
   @override
@@ -194,7 +228,12 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
             const SizedBox(height: 20),
-            StatusCard(isActive: _isActive),
+            StatusCard(
+              isActive: _isActive,
+              locationLabel: _locationLabel,
+              isLocationLoading: _locationLoading,
+              onRefreshLocation: _refreshLocation,
+            ),
             const SizedBox(height: 10),
           ],
         ),
@@ -252,9 +291,18 @@ class SOSButton extends StatelessWidget {
 }
 
 class StatusCard extends StatelessWidget {
-  const StatusCard({super.key, required this.isActive});
+  const StatusCard({
+    super.key,
+    required this.isActive,
+    required this.locationLabel,
+    required this.isLocationLoading,
+    required this.onRefreshLocation,
+  });
 
   final bool isActive;
+  final String locationLabel;
+  final bool isLocationLoading;
+  final VoidCallback onRefreshLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -268,10 +316,21 @@ class StatusCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StatusRow(
+          _StatusRow(
             icon: Icons.location_on,
             iconColor: kSecondaryColor,
-            label: 'Location: 11.0168, 76.9558',
+            label: 'Location: $locationLabel',
+            trailing: IconButton(
+              tooltip: 'Refresh location',
+              onPressed: isLocationLoading ? null : onRefreshLocation,
+              icon: isLocationLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded, size: 18),
+            ),
           ),
           const SizedBox(height: 10),
           const _StatusRow(
@@ -296,11 +355,13 @@ class _StatusRow extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.label,
+    this.trailing,
   });
 
   final IconData icon;
   final Color iconColor;
   final String label;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -311,13 +372,61 @@ class _StatusRow extends StatelessWidget {
         Expanded(
           child: Text(label, style: Theme.of(context).textTheme.bodyLarge),
         ),
+        trailing ?? const SizedBox.shrink(),
       ],
     );
   }
 }
 
-class MapScreen extends StatelessWidget {
+class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  static const LatLng _defaultCenter = LatLng(11.0168, 76.9558);
+  static const LatLng _distressLocation = LatLng(11.0180, 76.9562);
+
+  GoogleMapController? _mapController;
+  LatLng? _currentLocation;
+  bool _loadingLocation = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentLocation();
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    setState(() => _loadingLocation = true);
+    final position = await LocationService.getCurrentPosition();
+    if (!mounted) {
+      return;
+    }
+
+    if (position == null) {
+      setState(() => _loadingLocation = false);
+      return;
+    }
+
+    final current = LatLng(position.latitude, position.longitude);
+    setState(() {
+      _currentLocation = current;
+      _loadingLocation = false;
+    });
+    await _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(current, 16),
+    );
+  }
+
+  Future<void> _navigateToDistress() async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${_distressLocation.latitude},${_distressLocation.longitude}&travelmode=walking',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 
   void _showSignalSheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -361,8 +470,11 @@ class MapScreen extends StatelessWidget {
                         backgroundColor: kSecondaryColor,
                         foregroundColor: kTextPrimaryColor,
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('View Details'),
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        await _navigateToDistress();
+                      },
+                      child: const Text('Navigate'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -387,22 +499,41 @@ class MapScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final current = _currentLocation ?? _defaultCenter;
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('distress'),
+        position: _distressLocation,
+        infoWindow: const InfoWindow(title: 'Distress Signal'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        onTap: () => _showSignalSheet(context),
+      ),
+      Marker(
+        markerId: const MarkerId('self'),
+        position: current,
+        infoWindow: const InfoWindow(title: 'Your Location'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    };
+
     return Scaffold(
       body: Stack(
         children: [
-          Container(color: kBackgroundColor),
-          Positioned.fill(
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 180,
-                  left: 80,
-                  child: DistressMarker(onTap: () => _showSignalSheet(context)),
-                ),
-                const Positioned(top: 320, right: 130, child: UserMarker()),
-              ],
-            ),
+          GoogleMap(
+            initialCameraPosition: CameraPosition(target: current, zoom: 15),
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            markers: markers,
+            onMapCreated: (controller) {
+              _mapController = controller;
+            },
           ),
+          if (_loadingLocation)
+            Container(
+              color: Colors.black26,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
           Positioned(
             right: 16,
             bottom: 16,
@@ -410,94 +541,30 @@ class MapScreen extends StatelessWidget {
               children: [
                 FloatingActionButton(
                   mini: true,
-                  onPressed: () {},
+                  onPressed: _loadCurrentLocation,
                   child: const Icon(Icons.my_location_rounded),
                 ),
                 const SizedBox(height: 10),
                 FloatingActionButton(
                   mini: true,
-                  onPressed: () {},
+                  onPressed: () {
+                    _mapController?.animateCamera(
+                      CameraUpdate.newCameraPosition(
+                        CameraPosition(
+                          target: current,
+                          zoom: 15,
+                          tilt: 0,
+                          bearing: 0,
+                        ),
+                      ),
+                    );
+                  },
                   child: const Icon(Icons.explore_rounded),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class DistressMarker extends StatefulWidget {
-  const DistressMarker({super.key, required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<DistressMarker> createState() => _DistressMarkerState();
-}
-
-class _DistressMarkerState extends State<DistressMarker>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-      lowerBound: 20,
-      upperBound: 30,
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: _controller.value,
-            height: _controller.value,
-            decoration: BoxDecoration(
-              color: kPrimaryColor,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: kPrimaryColor.withValues(alpha: 0.7),
-                  blurRadius: 18,
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class UserMarker extends StatelessWidget {
-  const UserMarker({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 24,
-      height: 24,
-      decoration: BoxDecoration(
-        color: kSecondaryColor,
-        shape: BoxShape.circle,
-        border: Border.all(color: kTextPrimaryColor, width: 2),
       ),
     );
   }
