@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Rescue Link uses Bluetooth to scan for nearby devices during emergencies.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Rescue Link uses Bluetooth to scan for nearby devices during emergencies.</string>
 </dict>
 </plist>
